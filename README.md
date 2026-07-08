@@ -57,6 +57,20 @@ A desktop GUI (Electron/React) and cross-platform installers are on the roadmap.
 | Cloud ASR option, PDF/SRT/VTT export | 🚧 planned |
 | Windows + macOS installers via GitHub Releases | 🚧 planned |
 
+## Download
+
+Grab a build from the [Releases](../../releases) page (published by CI on each `v*` tag):
+
+- **Standalone CLI binary** — `transcript-genie-windows-x64.exe`,
+  `transcript-genie-macos-arm64`, or `transcript-genie-linux-x64`. No Python needed;
+  core transcription. Requires **ffmpeg** on your `PATH`. (Acoustic diarization needs
+  the Python package below.)
+- **Python package** — `pipx install transcript_genie-<version>-py3-none-any.whl`, or
+  `pip install "transcript-genie[diarize]"` for acoustic speaker diarization.
+
+> macOS: the binary is unsigned — the first run may need right-click → **Open** (or
+> `xattr -d com.apple.quarantine transcript-genie-macos-arm64`).
+
 ## Requirements
 
 - **Python 3.11 or 3.12** (ctranslate2/faster-whisper wheels aren't published for

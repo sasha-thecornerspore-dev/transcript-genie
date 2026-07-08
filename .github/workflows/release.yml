@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Reliable, full-featured install: pip/pipx-installable wheel + sdist.
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  # Standalone CLI binaries for users without Python (core transcription;
+  # acoustic diarization needs the pip package with the [diarize] extra).
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: transcript-genie-windows-x64.exe
+            built: dist/transcript-genie.exe
+          - os: macos-latest
+            asset: transcript-genie-macos-arm64
+            built: dist/transcript-genie
+          - os: ubuntu-latest
+            asset: transcript-genie-linux-x64
+            built: dist/transcript-genie
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+      - name: Build standalone binary
+        run: pyinstaller packaging/transcript-genie.spec --distpath dist --workpath build/pyi --noconfirm
+      - name: Smoke test (--help)
+        shell: bash
+        run: "'${{ matrix.built }}' --help"
+      - name: Rename for release
+        shell: bash
+        run: mv "${{ matrix.built }}" "dist/${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    needs: [wheel, binary]
+    runs-on: ubuntu-latest
+    # Publish as long as the (reliable) wheel built; attach whatever binaries
+    # succeeded, so a freeze failure on one OS never blocks the release.
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.wheel.result == 'success'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            Transcript Genie ${{ github.ref_name }}
+
+            **Assets**
+            - `transcript_genie-*.whl` / `*.tar.gz` — install with `pipx install transcript_genie-*.whl`
+              (add the `[diarize]` extra for acoustic speaker diarization).
+            - `transcript-genie-<os>-*` — standalone CLI binary (no Python needed;
+              core transcription only). Requires **ffmpeg** on your PATH.
+
+            > Draft transcripts — not certified. See the README.

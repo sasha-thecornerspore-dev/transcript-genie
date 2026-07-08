@@ -21,3 +21,5 @@ out_*/
 sample_case*/
 *.pdf
 *.docx
+dist_wheel/
+*.spec.bak
