@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import wave
+
+from .model import Segment
+
+
+def _remap_first_appearance(labels: list[int]) -> list[int]:
+    order: dict[int, int] = {}
+    out: list[int] = []
+    for lab in labels:
+        if lab not in order:
+            order[lab] = len(order)
+        out.append(order[lab])
+    return out
+
+
+def cluster_segments(
+    embeddings: list[list[float]],
+    num_speakers: int | None = None,
+    threshold: float = 0.75,
+) -> list[int]:
+    n = len(embeddings)
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+
+    import numpy as np
+    from sklearn.cluster import AgglomerativeClustering
+
+    x = np.asarray(embeddings, dtype=float)
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    x = x / norms
+
+    if num_speakers is not None:
+        k = max(1, min(num_speakers, n))
+        model = AgglomerativeClustering(n_clusters=k, metric="cosine", linkage="average")
+    else:
+        model = AgglomerativeClustering(
+            n_clusters=None, distance_threshold=threshold, metric="cosine", linkage="average"
+        )
+    labels = model.fit_predict(x).tolist()
+    return _remap_first_appearance(labels)
+
+
+def load_wav_mono(path):
+    import numpy as np
+
+    with wave.open(str(path), "rb") as w:
+        sr = w.getframerate()
+        n = w.getnframes()
+        ch = w.getnchannels()
+        raw = w.readframes(n)
+    data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    if ch > 1:
+        data = data.reshape(-1, ch).mean(axis=1)
+    return data, sr
+
+
+class EcapaEmbedder:
+    def __init__(self, savedir: str = "models/ecapa"):
+        self.savedir = savedir
+        self._model = None
+
+    def _load(self):
+        if self._model is None:
+            from speechbrain.inference.speaker import EncoderClassifier
+
+            self._model = EncoderClassifier.from_hparams(
+                source="speechbrain/spkrec-ecapa-voxceleb",
+                savedir=self.savedir,
+                run_opts={"device": "cpu"},
+            )
+        return self._model
+
+    def embed(self, waveform, sample_rate):
+        import torch
+
+        model = self._load()
+        wav = torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
+        emb = model.encode_batch(wav)
+        return emb.squeeze().detach().cpu().tolist()
+
+
+def assign_speakers(
+    wav_path,
+    segments: list[Segment],
+    embedder,
+    num_speakers: int | None = None,
+    threshold: float = 0.75,
+) -> list[Segment]:
+    if not segments:
+        return segments
+    data, sr = load_wav_mono(wav_path)
+    min_len = int(0.1 * sr)
+    embeddings = []
+    for seg in segments:
+        a = max(0, int(seg.start * sr))
+        b = min(len(data), int(seg.end * sr))
+        chunk = data[a:b]
+        if len(chunk) < min_len:
+            chunk = data[a : a + min_len] if a + min_len <= len(data) else data[-min_len:]
+        embeddings.append(embedder.embed(chunk, sr))
+    labels = cluster_segments(embeddings, num_speakers=num_speakers, threshold=threshold)
+    for seg, lab in zip(segments, labels):
+        seg.speaker_id = f"spk{lab + 1}"
+    return segments
+
+
+def _embed_segments(data, sr, segments, embedder):
+    min_len = int(0.1 * sr)
+    embeddings = []
+    for seg in segments:
+        a = max(0, int(seg.start * sr))
+        b = min(len(data), int(seg.end * sr))
+        chunk = data[a:b]
+        if len(chunk) < min_len:
+            chunk = data[a : a + min_len] if a + min_len <= len(data) else data[-min_len:]
+        embeddings.append(embedder.embed(chunk, sr))
+    return embeddings
+
+
+def refine_speakers(
+    wav_path,
+    segments: list[Segment],
+    anchors: list[tuple[float, str]],
+    embedder,
+    num_speakers: int | None = None,
+    threshold: float = 0.6,
+) -> list[Segment]:
+    """Correct speaker ids using acoustic clustering anchored to clerk tags.
+
+    The clerk log is sparse and mistimed, so a pure time-bisect mislabels long
+    stretches (e.g. the judge speaking after a party was last tagged). Here we
+    cluster segments acoustically, then map each acoustic cluster to the role of
+    the clerk speaker-tags (`anchors`, as (time, speaker_id)) that fall on it —
+    so a few correct JUDGE tags reclaim the judge's entire voice cluster.
+    Segments in a cluster that no anchor lands on keep their existing id.
+    """
+    if not segments:
+        return segments
+    from collections import Counter, defaultdict
+
+    data, sr = load_wav_mono(wav_path)
+    embeddings = _embed_segments(data, sr, segments, embedder)
+    clusters = cluster_segments(embeddings, num_speakers=num_speakers, threshold=threshold)
+
+    bounds = [(s.start, s.end) for s in segments]
+    votes: dict[int, Counter] = defaultdict(Counter)
+    for atime, role in anchors:
+        idx = next((i for i, (st, en) in enumerate(bounds) if st <= atime < en), None)
+        if idx is None:
+            idx = min(range(len(bounds)), key=lambda i: abs(bounds[i][0] - atime))
+        votes[clusters[idx]][role] += 1
+    cluster_role = {c: cnt.most_common(1)[0][0] for c, cnt in votes.items() if cnt}
+
+    for seg, c in zip(segments, clusters):
+        if c in cluster_role:
+            seg.speaker_id = cluster_role[c]
+    return segments

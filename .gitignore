@@ -1,0 +1,23 @@
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+.DS_Store
+projects/
+*.ogg
+*.wav
+.superpowers/
+*.egg-info/
+
+# ML model caches (downloaded at runtime)
+models/
+
+# Local run outputs & copied case data — may contain confidential audio/transcripts
+out_*/
+sample_case*/
+*.pdf
+*.docx
