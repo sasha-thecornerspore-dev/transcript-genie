@@ -14,7 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "httpx>=0.27", "fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9"]
+# Local web GUI (FastAPI backend + browser frontend).
+web = ["fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9"]
 # Acoustic speaker diarization (ECAPA). Heavy; opt in when you need it.
 diarize = ["torch>=2.0", "torchaudio>=2.0", "speechbrain>=1.0"]
 # Additional export formats.
@@ -22,9 +24,17 @@ pdf = ["reportlab>=4.0"]
 
 [project.scripts]
 transcript-genie = "transcript_genie.cli:main"
+transcript-genie-web = "transcript_genie.server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+transcript_genie = ["static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Benign: fastapi's TestClient vs httpx version note (third-party).
+    "ignore:Using `httpx` with `starlette.testclient`:Warning",
+]

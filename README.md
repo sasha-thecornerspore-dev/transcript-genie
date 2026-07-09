@@ -53,7 +53,8 @@ A desktop GUI (Electron/React) and cross-platform installers are on the roadmap.
 |---|---|
 | CourtSmart disc → court-format DOCX/JSON | ✅ working (CLI) |
 | Generic audio + speaker diarization | ✅ working (CLI) |
-| Desktop GUI (drag-in, review editor, export) | 🚧 planned |
+| Web GUI (drag-in, review + synced audio, export) | ✅ working (`transcript-genie-web`) |
+| Packaged Electron desktop app | 🚧 planned |
 | Cloud ASR option, PDF/SRT/VTT export | 🚧 planned |
 | Windows + macOS installers via GitHub Releases | 🚧 planned |
 
@@ -104,6 +105,20 @@ Outputs `transcript.json` and `transcript.docx` in `--out-dir`.
 
 Common flags: `--model` (`tiny`…`large-v3`), `--glossary` (comma-separated names),
 `--diarize` / `--no-diarize`, `--speakers N`, `--title`, `--ffmpeg <path>`.
+
+### Web GUI
+
+A local, browser-based GUI (no cloud): drop in an audio/video file, watch it
+transcribe, **review the transcript with click-to-seek audio playback**, rename
+speakers, and download the court-formatted DOCX.
+
+```bash
+pip install -e ".[web]"     # or:  pip install "transcript-genie[web]"
+transcript-genie-web        # serves http://127.0.0.1:8756 and opens your browser
+```
+
+Everything runs on your machine. (A packaged Electron desktop app wrapping this
+same UI is on the roadmap.)
 
 ## How it works
 

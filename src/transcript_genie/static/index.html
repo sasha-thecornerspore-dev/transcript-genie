@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transcript Genie</title>
+<style>
+  :root {
+    --bg:#0f1216; --panel:#171b21; --panel2:#1e242c; --line:#2a323c;
+    --text:#e7ecf2; --muted:#8b97a6; --accent:#5b9dff; --accent2:#3b7de0;
+    --ok:#3fb568; --warn:#e0a13b; --err:#e0563b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f5f7fa; --panel:#fff; --panel2:#eef2f7; --line:#dce3ec;
+      --text:#1a222c; --muted:#5a6675; --accent:#2b6fd6; --accent2:#215bb0; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--text); }
+  header { padding:16px 22px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:12px; }
+  header h1 { font-size:18px; margin:0; letter-spacing:.2px; }
+  header .tag { color:var(--muted); font-size:12px; }
+  .wrap { max-width:1100px; margin:0 auto; padding:22px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; margin-bottom:18px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, select, textarea, button { font:inherit; color:var(--text); }
+  input[type=text], input[type=number], select, textarea {
+    width:100%; background:var(--panel2); border:1px solid var(--line);
+    border-radius:8px; padding:9px 11px; }
+  .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .row3 { display:grid; grid-template-columns:1fr 160px 160px; gap:12px; }
+  .check { display:flex; align-items:center; gap:8px; margin-top:24px; }
+  .check input { width:auto; }
+  button.primary { background:var(--accent); border:1px solid var(--accent2);
+    color:#fff; padding:11px 18px; border-radius:9px; cursor:pointer; font-weight:600; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:transparent; border:1px solid var(--line);
+    padding:9px 14px; border-radius:9px; cursor:pointer; color:var(--text); }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:26px;
+    text-align:center; color:var(--muted); cursor:pointer; }
+  .drop.over { border-color:var(--accent); color:var(--text); }
+  .status { display:flex; align-items:center; gap:12px; color:var(--muted); }
+  .spinner { width:16px; height:16px; border:2px solid var(--line);
+    border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .disclaimer { font-size:12px; color:var(--warn); margin-top:8px; }
+  .editor { display:grid; grid-template-columns:220px 1fr; gap:18px; align-items:start; }
+  .roster .spk { margin-bottom:8px; }
+  .seg { display:grid; grid-template-columns:150px 1fr; gap:10px; padding:6px 8px;
+    border-radius:8px; cursor:pointer; }
+  .seg:hover { background:var(--panel2); }
+  .seg.active { background:var(--panel2); outline:1px solid var(--accent); }
+  .seg .who { color:var(--accent); font-size:12px; font-weight:600; padding-top:8px; }
+  .seg .txt { background:transparent; border:1px solid transparent; border-radius:6px;
+    padding:6px 8px; resize:vertical; min-height:34px; }
+  .seg .txt:focus { background:var(--panel2); border-color:var(--line); outline:none; }
+  audio { width:100%; margin-top:8px; }
+  .bar { display:flex; gap:10px; align-items:center; margin-top:14px; }
+  .hidden { display:none; }
+  a.btn { text-decoration:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚖️ Transcript Genie</h1>
+  <span class="tag">local · draft transcripts · not certified</span>
+</header>
+
+<div class="wrap">
+  <!-- Import -->
+  <div class="card" id="import">
+    <div class="drop" id="drop">
+      <div id="dropText">Drop an audio/video file here, or click to choose</div>
+      <input id="file" type="file" class="hidden"
+             accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.flac,.ogg" />
+    </div>
+    <div class="row3">
+      <div><label>Model</label>
+        <select id="model">
+          <option value="tiny">tiny (fastest)</option>
+          <option value="base">base</option>
+          <option value="small" selected>small</option>
+          <option value="medium">medium</option>
+          <option value="large-v3">large-v3 (best)</option>
+        </select>
+      </div>
+      <div><label>Speakers (optional)</label><input id="speakers" type="number" min="1" placeholder="auto" /></div>
+      <div class="check"><input id="diarize" type="checkbox" checked /><label style="margin:0">Identify speakers</label></div>
+    </div>
+    <div class="row">
+      <div style="grid-column:span 2"><label>Glossary — names/terms to bias (comma-separated)</label>
+        <input id="glossary" type="text" placeholder="e.g. Whitfield, Barrett, protective order" /></div>
+      <div><label>Title (optional)</label><input id="title" type="text" placeholder="filename" /></div>
+    </div>
+    <div class="bar">
+      <button class="primary" id="go" disabled>Transcribe</button>
+      <span class="status hidden" id="status"><span class="spinner"></span><span id="statusMsg"></span></span>
+    </div>
+    <div class="disclaimer">⚠️ Produces a working DRAFT transcript — not a certified court transcript.</div>
+  </div>
+
+  <!-- Review -->
+  <div class="card hidden" id="review">
+    <audio id="audio" controls preload="metadata"></audio>
+    <div class="editor" style="margin-top:14px">
+      <div class="roster card" style="margin:0">
+        <div style="font-weight:600; margin-bottom:8px">Speakers</div>
+        <div id="roster"></div>
+      </div>
+      <div>
+        <div id="segs"></div>
+      </div>
+    </div>
+    <div class="bar">
+      <button class="primary" id="export">Save &amp; download DOCX</button>
+      <button class="ghost" id="restart">New transcript</button>
+      <span class="status hidden" id="exportStatus"><span class="spinner"></span><span>Rendering…</span></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let state = { jobId:null, t:null };
+
+// ---- import ----
+const fileInput = $("#file"), drop = $("#drop");
+drop.onclick = () => fileInput.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files[0]) { fileInput.files = e.dataTransfer.files; pick(); } };
+fileInput.onchange = pick;
+function pick() {
+  const f = fileInput.files[0];
+  if (f) { $("#dropText").textContent = "📄 " + f.name; $("#go").disabled = false; }
+}
+
+$("#go").onclick = async () => {
+  const f = fileInput.files[0]; if (!f) return;
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("model", $("#model").value);
+  fd.append("diarize", $("#diarize").checked);
+  if ($("#speakers").value) fd.append("speakers", $("#speakers").value);
+  fd.append("glossary", $("#glossary").value);
+  fd.append("title", $("#title").value);
+  $("#go").disabled = true; showStatus("Uploading…");
+  const r = await fetch("/api/jobs", { method:"POST", body:fd });
+  const { id } = await r.json();
+  state.jobId = id; poll();
+};
+
+function showStatus(m) { $("#status").classList.remove("hidden"); $("#statusMsg").textContent = m; }
+
+async function poll() {
+  const r = await fetch(`/api/jobs/${state.jobId}`);
+  const j = await r.json();
+  showStatus(j.message || j.status);
+  if (j.status === "done") { state.t = j.transcript; renderReview(); }
+  else if (j.status === "error") { showStatus("⚠️ " + (j.error || "failed")); $("#go").disabled = false; }
+  else setTimeout(poll, 1200);
+}
+
+// ---- review ----
+function speakerLabel(id) {
+  const s = (state.t.speakers || []).find(s => s.id === id);
+  return s ? s.label : (id ? "SPEAKER" : "SPEAKER");
+}
+function renderRoster() {
+  const el = $("#roster"); el.innerHTML = "";
+  (state.t.speakers || []).forEach((sp, i) => {
+    const w = document.createElement("div"); w.className = "spk";
+    w.innerHTML = `<label style="margin:0 0 3px">${sp.name ? sp.name : sp.id}</label>`;
+    const inp = document.createElement("input"); inp.type = "text"; inp.value = sp.label;
+    inp.oninput = () => { state.t.speakers[i].label = inp.value; renderSegs(); };
+    w.appendChild(inp); el.appendChild(w);
+  });
+  if (!(state.t.speakers || []).length)
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px">No separate speakers.</div>';
+}
+function renderSegs() {
+  const el = $("#segs"); el.innerHTML = "";
+  state.t.segments.forEach((seg, i) => {
+    const row = document.createElement("div"); row.className = "seg"; row.dataset.i = i;
+    row.dataset.start = seg.start;
+    const who = document.createElement("div"); who.className = "who";
+    who.textContent = speakerLabel(seg.speaker_id) + ":";
+    const txt = document.createElement("textarea"); txt.className = "txt"; txt.rows = 1;
+    txt.value = seg.text;
+    txt.oninput = () => { state.t.segments[i].text = txt.value;
+      txt.style.height = "auto"; txt.style.height = txt.scrollHeight + "px"; };
+    row.onclick = e => { if (e.target !== txt) { $("#audio").currentTime = seg.start; $("#audio").play(); } };
+    row.appendChild(who); row.appendChild(txt); el.appendChild(row);
+  });
+}
+function renderReview() {
+  $("#import").classList.add("hidden");
+  $("#review").classList.remove("hidden");
+  $("#audio").src = `/api/jobs/${state.jobId}/audio`;
+  renderRoster(); renderSegs();
+}
+// highlight active segment during playback
+$("#audio") && ($("#audio").ontimeupdate = () => {
+  const t = $("#audio").currentTime; let active = null;
+  document.querySelectorAll(".seg").forEach(row => {
+    const s = parseFloat(row.dataset.start);
+    if (s <= t) active = row;
+    row.classList.remove("active");
+  });
+  if (active) active.classList.add("active");
+});
+
+$("#export").onclick = async () => {
+  $("#exportStatus").classList.remove("hidden");
+  const payload = JSON.parse(JSON.stringify(state.t));
+  await fetch(`/api/jobs/${state.jobId}/export`, {
+    method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload),
+  });
+  $("#exportStatus").classList.add("hidden");
+  window.location = `/api/jobs/${state.jobId}/docx`;
+};
+$("#restart").onclick = () => location.reload();
+</script>
+</body>
+</html>
