@@ -58,6 +58,10 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
     )
     parser.add_argument("--speakers", type=int, default=None, help="fixed number of speakers, if known")
     parser.add_argument("--roster", default=None, help="path to a JSON {speaker_id: label} roster override")
+    parser.add_argument(
+        "--jobs", type=int, default=1,
+        help="parallel ASR worker processes — splits the audio to speed up long recordings",
+    )
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -87,10 +91,22 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
     return 0
 
 
+def _transcribe(engine, wav, glossary, args):
+    """Single-engine transcription, or parallel workers when --jobs > 1."""
+    if getattr(args, "jobs", 1) and args.jobs > 1:
+        from .parallel import transcribe_parallel
+
+        return transcribe_parallel(
+            wav, model_size=args.model, jobs=args.jobs, glossary=glossary,
+            ffmpeg=args.ffmpeg, workdir=wav.parent,
+        )
+    return engine.transcribe(wav, glossary=glossary)
+
+
 def _run_courtsmart(input_dir, out_dir, engine, glossary, embedder, args):
     session = parse_csx_file(_find_csx(input_dir))
     wav = build_wav(session, input_dir, out_dir / "audio.wav", ffmpeg=args.ffmpeg)
-    segments = engine.transcribe(wav, glossary=glossary)
+    segments = _transcribe(engine, wav, glossary, args)
     transcript = build_transcript(session, segments, trim_to_case=args.trim)
     if args.refine:
         if embedder is None:
@@ -103,7 +119,7 @@ def _run_courtsmart(input_dir, out_dir, engine, glossary, embedder, args):
 
 def _run_generic(input_path, out_dir, engine, glossary, embedder, args):
     wav = decode_to_wav(input_path, out_dir / "audio.wav", ffmpeg=args.ffmpeg)
-    segments = engine.transcribe(wav, glossary=glossary)
+    segments = _transcribe(engine, wav, glossary, args)
     if args.diarize:
         if embedder is None:
             embedder = EcapaEmbedder()
