@@ -25,6 +25,21 @@ def resolve_audio_paths(session: CsxSession, disc_dir) -> list[Path]:
 def build_wav(session, disc_dir, out_path, samplerate: int = 16000, ffmpeg: str = "ffmpeg") -> Path:
     out_path = Path(out_path)
     paths = resolve_audio_paths(session, disc_dir)
+    # Skip segments not present on disk (e.g. bad sectors on a damaged/recovered
+    # disc). The transcript will have a gap there rather than failing outright.
+    present = [p for p in paths if p.exists()]
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        import sys
+
+        print(
+            f"warning: {len(missing)} of {len(paths)} audio segments missing "
+            f"(unreadable/unrecovered); stitching the rest with gaps:",
+            file=sys.stderr,
+        )
+        for p in missing:
+            print(f"  missing: {p.name}", file=sys.stderr)
+    paths = present
     if not paths:
         raise ValueError("Session has no audio segments to stitch")
     fd, tmp_name = tempfile.mkstemp(suffix=".txt")

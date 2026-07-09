@@ -75,8 +75,9 @@ def classify_tag(text: str) -> TagClass:
 
 
 _CASE_RE = re.compile(
-    r"(?P<a>[A-Za-z.\- ]+?)\s+v\.?\s+(?P<b>[A-Za-z.\- ]+?)\s+"
-    r"(?P<num>[A-Z]-\d{2}-[A-Z]{2}-\d{2}-\d+)",
+    r"(?P<a>[A-Za-z.\- ]+?)\s+(?:v\.?|vs\.?|versus)\s+(?P<b>[A-Za-z.\- ]+?)\s+"
+    # Maryland case numbers: C-03-FM-19-807568 (MDEC) or 03-C-18-012834 (older).
+    r"(?P<num>C-\d{2}-[A-Z]{2}-\d{2}-\d+|\d{2}-C-\d{2}-\d+)",
     re.IGNORECASE,
 )
 
