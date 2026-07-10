@@ -1,22 +1,55 @@
-"""Parallel transcription: split the stitched WAV into N time-chunks and run one
-faster-whisper worker process per chunk, then merge with time offsets.
+"""Parallel, resumable transcription with a CPU pace control.
 
-CPU-bound ASR scales close to linearly with cores this way. Each worker loads
-its own model, so keep `jobs` <= physical cores and mind RAM (each `small`
-int8 model is ~0.5-1 GB).
+Splits the stitched WAV into N time-chunks and runs one faster-whisper worker
+process per chunk, merging with time offsets. Each finished chunk is
+checkpointed to disk, so an interrupted run resumes instead of restarting. A
+`pace` picks how many cores to use and whether to run at low OS priority.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 import wave
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict
 from pathlib import Path
 
 from .asr import whisper_segments_to_model
-from .model import Segment
+from .model import Segment, Word
 
+
+# ----- pace / CPU control -------------------------------------------------
+
+def resolve_pace(pace: str, cpu_count: int | None = None) -> tuple[int, int, bool]:
+    """Map a pace name to (jobs, cpu_threads_per_worker, low_priority)."""
+    n = cpu_count or (os.cpu_count() or 4)
+    if pace == "aggressive":
+        return max(1, n - 1), 2, False
+    if pace == "background":
+        return max(1, n // 4), 1, True
+    # balanced (default)
+    return max(1, n // 2), 2, False
+
+
+def set_low_priority() -> None:
+    """Best-effort: drop this process to below-normal scheduling priority."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            below_normal = 0x00004000
+            k = ctypes.windll.kernel32
+            k.SetPriorityClass(k.GetCurrentProcess(), below_normal)
+        else:
+            os.nice(10)
+    except Exception:
+        pass
+
+
+# ----- audio splitting ----------------------------------------------------
 
 def wav_duration(path) -> float:
     with wave.open(str(path), "rb") as w:
@@ -48,9 +81,25 @@ def _write_chunk(wav, start: float, length: float, out, ffmpeg: str) -> Path:
     return out
 
 
-def _worker(chunk_path: str, offset: float, model_size: str,
-            glossary: list[str] | None, cpu_threads: int) -> list[Segment]:
-    """Runs in a separate process: load a model, transcribe one chunk, offset."""
+# ----- checkpoint (segment <-> json) --------------------------------------
+
+def _seg_from_dict(d: dict) -> Segment:
+    return Segment(
+        d["start"], d["end"], d["text"], d.get("speaker_id"),
+        [Word(**w) for w in d.get("words", [])],
+    )
+
+
+def _load_cache(path: Path) -> list[Segment]:
+    return [_seg_from_dict(d) for d in json.loads(path.read_text(encoding="utf-8"))]
+
+
+# ----- worker -------------------------------------------------------------
+
+def _worker(chunk_path, offset, model_size, glossary, cpu_threads, cache_path, low_priority):
+    """Runs in a separate process: transcribe one chunk, offset, checkpoint."""
+    if low_priority:
+        set_low_priority()
     from faster_whisper import WhisperModel
 
     model = WhisperModel(model_size, device="cpu", compute_type="int8", cpu_threads=cpu_threads)
@@ -65,6 +114,10 @@ def _worker(chunk_path: str, offset: float, model_size: str,
         for w in s.words:
             w.start += offset
             w.end += offset
+    if cache_path:
+        Path(cache_path).write_text(
+            json.dumps([asdict(s) for s in segs]), encoding="utf-8"
+        )
     return segs
 
 
@@ -77,8 +130,15 @@ def transcribe_parallel(
     cpu_threads: int | None = None,
     workdir=None,
     progress=None,
+    resume: bool = True,
+    low_priority: bool = False,
 ) -> list[Segment]:
-    """Transcribe `wav_path` using `jobs` parallel worker processes."""
+    """Transcribe `wav_path` with `jobs` worker processes, resumably.
+
+    `progress(done, total)` is called after each chunk completes (including
+    cached ones on resume). Finished chunks are cached to
+    `<workdir>/chunk_NN.segs.json`; a re-run with `resume=True` reuses them.
+    """
     wav_path = Path(wav_path)
     workdir = Path(workdir) if workdir else wav_path.parent
     jobs = max(1, int(jobs))
@@ -87,26 +147,42 @@ def transcribe_parallel(
     if cpu_threads is None:
         cpu_threads = max(1, (os.cpu_count() or 4) // jobs)
 
-    chunks: list[tuple[Path, float]] = []
+    chunks = []
     for i, (start, length) in enumerate(plan):
         chunk = _write_chunk(wav_path, start, length, workdir / f"chunk_{i:02d}.wav", ffmpeg)
         chunks.append((chunk, start))
+    total = len(chunks)
 
-    if jobs == 1:
-        return _worker(str(chunks[0][0]), chunks[0][1], model_size, glossary, cpu_threads)
+    results: dict[int, list[Segment]] = {}
+    todo = []
+    for i, (chunk, offset) in enumerate(chunks):
+        cache = workdir / f"chunk_{i:02d}.segs.json"
+        if resume and cache.exists():
+            results[i] = _load_cache(cache)
+        else:
+            todo.append((i, str(chunk), offset, str(cache)))
+    if progress:
+        progress(len(results), total)
+
+    if todo:
+        if jobs == 1:
+            for i, chunk, offset, cache in todo:
+                results[i] = _worker(chunk, offset, model_size, glossary, cpu_threads, cache, low_priority)
+                if progress:
+                    progress(len(results), total)
+        else:
+            with ProcessPoolExecutor(max_workers=jobs) as ex:
+                fut_index = {
+                    ex.submit(_worker, chunk, offset, model_size, glossary, cpu_threads, cache, low_priority): i
+                    for (i, chunk, offset, cache) in todo
+                }
+                for fut in as_completed(fut_index):
+                    results[fut_index[fut]] = fut.result()
+                    if progress:
+                        progress(len(results), total)
 
     segments: list[Segment] = []
-    done = 0
-    with ProcessPoolExecutor(max_workers=jobs) as ex:
-        futures = [
-            ex.submit(_worker, str(c), off, model_size, glossary, cpu_threads)
-            for c, off in chunks
-        ]
-        for fut in futures:
-            segments.extend(fut.result())
-            done += 1
-            if progress:
-                progress(done, jobs)
-
+    for i in range(total):
+        segments.extend(results.get(i, []))
     segments.sort(key=lambda s: s.start)
     return segments

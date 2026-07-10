@@ -94,11 +94,18 @@
         <input id="glossary" type="text" placeholder="e.g. Whitfield, Barrett, protective order" /></div>
       <div><label>Title (optional)</label><input id="title" type="text" placeholder="filename" /></div>
     </div>
+    <label>CPU pace</label>
+    <select id="pace">
+      <option value="balanced" selected>Balanced — about half your cores</option>
+      <option value="aggressive">Aggressive — fastest, uses most cores</option>
+      <option value="background">Background — few cores + low priority (stays out of your way)</option>
+    </select>
     <div class="bar">
       <button class="primary" id="go" disabled>Transcribe</button>
       <span class="status hidden" id="status"><span class="spinner"></span><span id="statusMsg"></span></span>
     </div>
-    <div class="disclaimer">⚠️ Produces a working DRAFT transcript — not a certified court transcript.</div>
+    <progress id="prog" class="hidden" max="1" value="0" style="width:100%; height:8px; margin-top:10px"></progress>
+    <div class="disclaimer">⚠️ Produces a working DRAFT transcript — not a certified court transcript. Long runs checkpoint as they go, so an interrupted job resumes where it left off.</div>
   </div>
 
   <!-- Review -->
@@ -147,6 +154,7 @@ $("#go").onclick = async () => {
   if ($("#speakers").value) fd.append("speakers", $("#speakers").value);
   fd.append("glossary", $("#glossary").value);
   fd.append("title", $("#title").value);
+  fd.append("pace", $("#pace").value);
   $("#go").disabled = true; showStatus("Uploading…");
   const r = await fetch("/api/jobs", { method:"POST", body:fd });
   const { id } = await r.json();
@@ -159,6 +167,10 @@ async function poll() {
   const r = await fetch(`/api/jobs/${state.jobId}`);
   const j = await r.json();
   showStatus(j.message || j.status);
+  const prog = $("#prog");
+  if (j.status === "running" && typeof j.progress === "number") {
+    prog.classList.remove("hidden"); prog.value = j.progress;
+  } else { prog.classList.add("hidden"); }
   if (j.status === "done") { state.t = j.transcript; renderReview(); }
   else if (j.status === "error") { showStatus("⚠️ " + (j.error || "failed")); $("#go").disabled = false; }
   else setTimeout(poll, 1200);

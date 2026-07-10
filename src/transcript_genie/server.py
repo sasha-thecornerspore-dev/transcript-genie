@@ -35,6 +35,7 @@ class Job:
     filename: str
     status: str = "queued"        # queued | running | done | error
     message: str = ""
+    progress: float = 0.0         # 0..1 during transcription
     error: str | None = None
     transcript: Transcript | None = field(default=None)
 
@@ -65,14 +66,31 @@ def create_app(engine=None, embedder=None) -> FastAPI:
             job.status = "running"
             job.message = "Decoding audio…"
             wav = decode_to_wav(audio_path, job.workdir / "audio.wav")
-            job.message = "Transcribing… (this can take a while)"
-            segments = _make_engine(opts["model"]).transcribe(wav, glossary=opts["glossary"])
+
+            def _progress(done: int, total: int) -> None:
+                job.progress = (done / total) if total else 0.0
+                job.message = f"Transcribing… {done}/{total} segments of audio"
+
+            if engine is not None:                       # injected (tests)
+                job.message = "Transcribing…"
+                segments = engine.transcribe(wav, glossary=opts["glossary"])
+            else:
+                from .parallel import resolve_pace, transcribe_parallel
+
+                n_jobs, cpu_threads, low = resolve_pace(opts["pace"])
+                job.message = f"Transcribing… ({opts['pace']}, {n_jobs} workers)"
+                segments = transcribe_parallel(
+                    wav, model_size=opts["model"], jobs=n_jobs, glossary=opts["glossary"],
+                    cpu_threads=cpu_threads, workdir=job.workdir, progress=_progress,
+                    low_priority=low,
+                )
             if opts["diarize"]:
                 from .diarize import assign_speakers
 
                 job.message = "Identifying speakers…"
                 assign_speakers(wav, segments, _make_embedder(), num_speakers=opts["speakers"])
             job.message = "Formatting…"
+            job.progress = 1.0
             tr = build_plain_transcript(segments, title=opts["title"] or Path(job.filename).stem)
             (job.workdir / "transcript.json").write_text(tr.to_json(), encoding="utf-8")
             write_court_docx(tr, job.workdir / "transcript.docx")
@@ -96,6 +114,7 @@ def create_app(engine=None, embedder=None) -> FastAPI:
         speakers: int | None = Form(None),
         glossary: str = Form(""),
         title: str = Form(""),
+        pace: str = Form("balanced"),
     ) -> JSONResponse:
         job_id = uuid.uuid4().hex[:12]
         workdir = Path(tempfile.mkdtemp(prefix=f"tg_{job_id}_"))
@@ -109,6 +128,7 @@ def create_app(engine=None, embedder=None) -> FastAPI:
             "speakers": speakers,
             "glossary": [g.strip() for g in glossary.split(",") if g.strip()] or None,
             "title": title,
+            "pace": pace,
         }
         threading.Thread(target=_run, args=(job, src, opts), daemon=True).start()
         return JSONResponse({"id": job_id})
@@ -122,7 +142,10 @@ def create_app(engine=None, embedder=None) -> FastAPI:
     @app.get("/api/jobs/{job_id}")
     def job_status(job_id: str) -> JSONResponse:
         job = _get(job_id)
-        body: dict = {"id": job.id, "status": job.status, "message": job.message}
+        body: dict = {
+            "id": job.id, "status": job.status, "message": job.message,
+            "progress": round(job.progress, 3),
+        }
         if job.status == "done" and job.transcript is not None:
             body["transcript"] = job.transcript.to_dict()
         if job.status == "error":

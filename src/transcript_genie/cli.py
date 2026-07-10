@@ -62,6 +62,11 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
         "--jobs", type=int, default=1,
         help="parallel ASR worker processes — splits the audio to speed up long recordings",
     )
+    parser.add_argument(
+        "--pace", choices=["aggressive", "balanced", "background"], default=None,
+        help="CPU usage: aggressive (most cores), balanced (~half), background "
+             "(few cores + low priority so the machine stays usable). Overrides --jobs count.",
+    )
     args = parser.parse_args(argv)
 
     input_path = Path(args.input)
@@ -92,13 +97,21 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
 
 
 def _transcribe(engine, wav, glossary, args):
-    """Single-engine transcription, or parallel workers when --jobs > 1."""
-    if getattr(args, "jobs", 1) and args.jobs > 1:
+    """Single-engine transcription, or parallel/paced workers when requested."""
+    jobs = getattr(args, "jobs", 1) or 1
+    cpu_threads, low = None, False
+    pace = getattr(args, "pace", None)
+    if pace:
+        from .parallel import resolve_pace
+
+        pjobs, cpu_threads, low = resolve_pace(pace)
+        jobs = jobs if jobs > 1 else pjobs
+    if jobs > 1:
         from .parallel import transcribe_parallel
 
         return transcribe_parallel(
-            wav, model_size=args.model, jobs=args.jobs, glossary=glossary,
-            ffmpeg=args.ffmpeg, workdir=wav.parent,
+            wav, model_size=args.model, jobs=jobs, glossary=glossary, ffmpeg=args.ffmpeg,
+            cpu_threads=cpu_threads, workdir=wav.parent, low_priority=low,
         )
     return engine.transcribe(wav, glossary=glossary)
 
