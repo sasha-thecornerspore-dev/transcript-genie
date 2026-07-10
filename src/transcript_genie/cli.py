@@ -36,7 +36,9 @@ def _load_roster(path: str | None) -> dict[str, str]:
 
 def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
     parser = argparse.ArgumentParser(prog="transcript-genie")
-    parser.add_argument("input", help="CourtSmart folder (contains Sessions.csx) or a media file")
+    parser.add_argument("input", nargs="?", help="CourtSmart folder (contains Sessions.csx) or a media file")
+    parser.add_argument("--version", action="store_true", help="print version and exit")
+    parser.add_argument("--check-update", action="store_true", help="check GitHub for a newer release")
     parser.add_argument("--out-dir", default=".")
     parser.add_argument("--model", default="small", help="faster-whisper model: tiny..large-v3")
     parser.add_argument("--ffmpeg", default="ffmpeg")
@@ -68,6 +70,27 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
              "(few cores + low priority so the machine stays usable). Overrides --jobs count.",
     )
     args = parser.parse_args(argv)
+
+    if args.version:
+        from . import __version__
+
+        print(f"transcript-genie {__version__}")
+        return 0
+    if args.check_update:
+        from .update import check_for_update
+
+        try:
+            info = check_for_update()
+        except Exception as exc:
+            print(f"Update check failed: {exc}")
+            return 1
+        if info["update_available"]:
+            print(f"Update available: {info['current']} -> {info['latest']}\n{info['url']}")
+        else:
+            print(f"Up to date (transcript-genie {info['current']}).")
+        return 0
+    if not args.input:
+        parser.error("input is required (a CourtSmart folder or a media file)")
 
     input_path = Path(args.input)
     out_dir = Path(args.out_dir)
