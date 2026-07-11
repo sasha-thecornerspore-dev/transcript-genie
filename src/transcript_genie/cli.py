@@ -10,7 +10,7 @@ from .build import apply_speaker_roster, build_plain_transcript
 from .court_docx import write_court_docx
 from .csx import parse_csx_file
 from .diarize import EcapaEmbedder, assign_speakers, refine_speakers
-from .media import build_wav, decode_to_wav
+from .media import build_wav, decode_to_wav, folder_audio_files, stitch_folder_wav
 
 
 def _find_csx(input_dir: Path) -> Path:
@@ -26,6 +26,16 @@ def _has_csx(input_dir: Path) -> bool:
     if (input_dir / "Sessions.csx").exists():
         return True
     return next(input_dir.rglob("*.csx"), None) is not None
+
+
+def _apply_metadata(transcript, args) -> None:
+    """Override transcript caption fields from --case-* flags, if given."""
+    for attr, val in (
+        ("case_name", args.case_name), ("case_number", args.case_number),
+        ("court", args.court), ("judge", args.judge), ("hearing_date", args.date),
+    ):
+        if val:
+            setattr(transcript, attr, val)
 
 
 def _load_roster(path: str | None) -> dict[str, str]:
@@ -60,6 +70,11 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
     )
     parser.add_argument("--speakers", type=int, default=None, help="fixed number of speakers, if known")
     parser.add_argument("--roster", default=None, help="path to a JSON {speaker_id: label} roster override")
+    parser.add_argument("--case-name", default="", help="caption override (e.g. 'Doe v. Roe')")
+    parser.add_argument("--case-number", default="", help="case number override")
+    parser.add_argument("--court", default="", help="court name override")
+    parser.add_argument("--judge", default="", help="judge name override")
+    parser.add_argument("--date", default="", help="hearing date override")
     parser.add_argument(
         "--jobs", type=int, default=1,
         help="parallel ASR worker processes — splits the audio to speed up long recordings",
@@ -102,13 +117,16 @@ def main(argv: list[str] | None = None, engine=None, embedder=None) -> int:
 
     if input_path.is_dir() and _has_csx(input_path):
         transcript = _run_courtsmart(input_path, out_dir, engine, glossary, embedder, args)
+    elif input_path.is_dir() and folder_audio_files(input_path):
+        transcript = _run_folder(input_path, out_dir, engine, glossary, embedder, args)
     elif input_path.is_file():
         transcript = _run_generic(input_path, out_dir, engine, glossary, embedder, args)
     else:
         raise FileNotFoundError(
-            f"Input must be a CourtSmart folder (containing a .csx) or a media file: {input_path}"
+            f"Input must be a CourtSmart folder (.csx), a folder of audio files, or a media file: {input_path}"
         )
 
+    _apply_metadata(transcript, args)
     roster = _load_roster(args.roster)
     if roster:
         apply_speaker_roster(transcript, roster)
@@ -161,6 +179,17 @@ def _run_generic(input_path, out_dir, engine, glossary, embedder, args):
             embedder = EcapaEmbedder()
         assign_speakers(wav, segments, embedder, num_speakers=args.speakers)
     return build_plain_transcript(segments, title=args.title or input_path.stem)
+
+
+def _run_folder(input_dir, out_dir, engine, glossary, embedder, args):
+    """A folder of loose audio files (no .csx): stitch → transcribe → plain."""
+    wav = stitch_folder_wav(input_dir, out_dir / "audio.wav", ffmpeg=args.ffmpeg)
+    segments = _transcribe(engine, wav, glossary, args)
+    if args.diarize:
+        if embedder is None:
+            embedder = EcapaEmbedder()
+        assign_speakers(wav, segments, embedder, num_speakers=args.speakers)
+    return build_plain_transcript(segments, title=args.title or input_dir.name)
 
 
 if __name__ == "__main__":

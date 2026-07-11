@@ -39,9 +39,14 @@ def build_wav(session, disc_dir, out_path, samplerate: int = 16000, ffmpeg: str 
         )
         for p in missing:
             print(f"  missing: {p.name}", file=sys.stderr)
-    paths = present
-    if not paths:
+    if not present:
         raise ValueError("Session has no audio segments to stitch")
+    return _concat_to_wav(present, out_path, samplerate, ffmpeg)
+
+
+def _concat_to_wav(paths, out_path, samplerate: int = 16000, ffmpeg: str = "ffmpeg") -> Path:
+    """Concatenate audio files (in the given order) into one mono WAV."""
+    out_path = Path(out_path)
     fd, tmp_name = tempfile.mkstemp(suffix=".txt")
     list_file = Path(tmp_name)
     try:
@@ -50,17 +55,37 @@ def build_wav(session, disc_dir, out_path, samplerate: int = 16000, ffmpeg: str 
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             for p in paths:
                 # ffmpeg concat demuxer: escape single quotes in paths
-                safe = p.resolve().as_posix().replace("'", r"'\''")
+                safe = Path(p).resolve().as_posix().replace("'", r"'\''")
                 fh.write(f"file '{safe}'\n")
-        cmd = [
-            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "concat", "-safe", "0", "-i", str(list_file),
-            "-ac", "1", "-ar", str(samplerate), str(out_path),
-        ]
-        subprocess.run(cmd, check=True)
+        subprocess.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "concat", "-safe", "0", "-i", str(list_file),
+             "-ac", "1", "-ar", str(samplerate), str(out_path)],
+            check=True,
+        )
     finally:
         list_file.unlink(missing_ok=True)
     return out_path
+
+
+AUDIO_EXTS = {".ogg", ".mp3", ".wav", ".m4a", ".flac", ".mp4", ".aac", ".wma", ".opus"}
+
+
+def folder_audio_files(folder) -> list[Path]:
+    """Loose audio files directly in `folder`, sorted by filename."""
+    folder = Path(folder)
+    return sorted(
+        (p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS),
+        key=lambda p: p.name,
+    )
+
+
+def stitch_folder_wav(folder, out_path, samplerate: int = 16000, ffmpeg: str = "ffmpeg") -> Path:
+    """Stitch a folder of loose audio files (name order) into one mono WAV."""
+    paths = folder_audio_files(folder)
+    if not paths:
+        raise ValueError(f"No audio files found in {folder}")
+    return _concat_to_wav(paths, out_path, samplerate, ffmpeg)
 
 
 def ffmpeg_decode_cmd(input_path, out_path, samplerate: int = 16000, ffmpeg: str = "ffmpeg") -> list[str]:
