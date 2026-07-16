@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import wave
 
-from .model import Segment
+from .model import Segment, Speaker
 
 
 def _remap_first_appearance(labels: list[int]) -> list[int]:
@@ -160,3 +160,37 @@ def refine_speakers(
         if c in cluster_role:
             seg.speaker_id = cluster_role[c]
     return segments
+
+
+def diarize_transcript(transcript, wav_path, embedder, threshold: float = 0.80,
+                       min_cluster: int = 10, num_speakers: int | None = None):
+    """Assign acoustic speaker labels to a transcript (in place).
+
+    Clusters segments by voice (cosine, tuned for single-mic courtroom audio),
+    folds tiny noise clusters into "SPEAKER (unclear)", and labels the real
+    voices SPEAKER 1..N by cluster size. Speech-only labels — no case roles.
+    """
+    from collections import Counter
+
+    segs = transcript.segments
+    if not segs:
+        return transcript
+    data, sr = load_wav_mono(wav_path)
+    embeddings = _embed_segments(data, sr, segs, embedder)
+    labels = cluster_segments(embeddings, num_speakers=num_speakers, threshold=threshold)
+
+    sizes = Counter(labels)
+    big = [cid for cid, _ in sizes.most_common() if sizes[cid] >= min_cluster]
+    rank = {cid: i + 1 for i, cid in enumerate(big)}
+    for seg, lab in zip(segs, labels):
+        seg.speaker_id = f"spk{rank[lab]}" if lab in rank else "spk_unclear"
+
+    roster: dict[str, str] = {}
+    for seg in segs:
+        if seg.speaker_id not in roster:
+            roster[seg.speaker_id] = (
+                "SPEAKER (unclear)" if seg.speaker_id == "spk_unclear"
+                else f"SPEAKER {seg.speaker_id[3:]}"
+            )
+    transcript.speakers = [Speaker(id=k, label=v) for k, v in roster.items()]
+    return transcript
