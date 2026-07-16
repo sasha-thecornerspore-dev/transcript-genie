@@ -162,21 +162,32 @@ def refine_speakers(
     return segments
 
 
+def embed_transcript(transcript, wav_path, embedder) -> list[list[float]]:
+    """Voice embeddings for each segment — the slow part. Cache and reuse these
+    to re-cluster (re-tune speakers) instantly."""
+    data, sr = load_wav_mono(wav_path)
+    return _embed_segments(data, sr, transcript.segments, embedder)
+
+
 def diarize_transcript(transcript, wav_path, embedder, threshold: float = 0.80,
-                       min_cluster: int = 10, num_speakers: int | None = None):
+                       min_cluster: int = 10, num_speakers: int | None = None,
+                       embeddings: list[list[float]] | None = None):
     """Assign acoustic speaker labels to a transcript (in place).
 
     Clusters segments by voice (cosine, tuned for single-mic courtroom audio),
     folds tiny noise clusters into "SPEAKER (unclear)", and labels the real
     voices SPEAKER 1..N by cluster size. Speech-only labels — no case roles.
+
+    Pass `embeddings` (from `embed_transcript`) to skip re-embedding — this makes
+    re-tuning `threshold`/`num_speakers`/`min_cluster` effectively instant.
     """
     from collections import Counter
 
     segs = transcript.segments
     if not segs:
         return transcript
-    data, sr = load_wav_mono(wav_path)
-    embeddings = _embed_segments(data, sr, segs, embedder)
+    if embeddings is None:
+        embeddings = embed_transcript(transcript, wav_path, embedder)
     labels = cluster_segments(embeddings, num_speakers=num_speakers, threshold=threshold)
 
     sizes = Counter(labels)

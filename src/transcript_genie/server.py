@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from .build import apply_speaker_roster, build_plain_transcript
 from .court_docx import write_court_docx
@@ -38,6 +38,7 @@ class Job:
     progress: float = 0.0         # 0..1 during transcription
     error: str | None = None
     transcript: Transcript | None = field(default=None)
+    embeddings: list | None = None   # cached voice embeddings -> instant re-diarize
 
 
 def create_app(engine=None, embedder=None) -> FastAPI:
@@ -60,6 +61,10 @@ def create_app(engine=None, embedder=None) -> FastAPI:
         from .diarize import EcapaEmbedder
 
         return EcapaEmbedder()
+
+    def _save(job: Job, tr: Transcript) -> None:
+        (job.workdir / "transcript.json").write_text(tr.to_json(), encoding="utf-8")
+        write_court_docx(tr, job.workdir / "transcript.docx")
 
     def _run(job: Job, audio_path: Path, opts: dict) -> None:
         try:
@@ -84,16 +89,21 @@ def create_app(engine=None, embedder=None) -> FastAPI:
                     cpu_threads=cpu_threads, workdir=job.workdir, progress=_progress,
                     low_priority=low,
                 )
-            if opts["diarize"]:
-                from .diarize import assign_speakers
-
-                job.message = "Identifying speakers…"
-                assign_speakers(wav, segments, _make_embedder(), num_speakers=opts["speakers"])
             job.message = "Formatting…"
             job.progress = 1.0
             tr = build_plain_transcript(segments, title=opts["title"] or Path(job.filename).stem)
-            (job.workdir / "transcript.json").write_text(tr.to_json(), encoding="utf-8")
-            write_court_docx(tr, job.workdir / "transcript.docx")
+            if opts["diarize"]:
+                from .diarize import diarize_transcript, embed_transcript
+
+                job.message = "Identifying speakers…"
+                emb = embed_transcript(tr, wav, _make_embedder())
+                job.embeddings = emb                 # cached -> re-tuning is instant
+                diarize_transcript(
+                    tr, wav, _make_embedder(), threshold=opts["threshold"],
+                    min_cluster=opts["min_cluster"], num_speakers=opts["speakers"],
+                    embeddings=emb,
+                )
+            _save(job, tr)
             job.transcript = tr
             job.status = "done"
             job.message = "Done"
@@ -115,6 +125,8 @@ def create_app(engine=None, embedder=None) -> FastAPI:
         glossary: str = Form(""),
         title: str = Form(""),
         pace: str = Form("balanced"),
+        threshold: float = Form(0.80),
+        min_cluster: int = Form(10),
     ) -> JSONResponse:
         job_id = uuid.uuid4().hex[:12]
         workdir = Path(tempfile.mkdtemp(prefix=f"tg_{job_id}_"))
@@ -129,6 +141,8 @@ def create_app(engine=None, embedder=None) -> FastAPI:
             "glossary": [g.strip() for g in glossary.split(",") if g.strip()] or None,
             "title": title,
             "pace": pace,
+            "threshold": threshold,
+            "min_cluster": min_cluster,
         }
         threading.Thread(target=_run, args=(job, src, opts), daemon=True).start()
         return JSONResponse({"id": job_id})
@@ -172,6 +186,52 @@ def create_app(engine=None, embedder=None) -> FastAPI:
         (job.workdir / "transcript.json").write_text(tr.to_json(), encoding="utf-8")
         write_court_docx(tr, job.workdir / "transcript.docx")
         return JSONResponse({"ok": True})
+
+    @app.post("/api/jobs/{job_id}/rediarize")
+    def job_rediarize(job_id: str, payload: dict) -> JSONResponse:
+        """Re-cluster speakers with new settings. Instant once embeddings cached."""
+        job = _get(job_id)
+        if job.transcript is None:
+            raise HTTPException(409, "transcript not ready")
+        from .diarize import diarize_transcript, embed_transcript
+
+        wav = job.workdir / "audio.wav"
+        if job.embeddings is None:
+            job.embeddings = embed_transcript(job.transcript, wav, _make_embedder())
+        n = payload.get("num_speakers")
+        diarize_transcript(
+            job.transcript, wav, _make_embedder(),
+            threshold=float(payload.get("threshold", 0.80)),
+            min_cluster=int(payload.get("min_cluster", 10)),
+            num_speakers=int(n) if n else None,
+            embeddings=job.embeddings,
+        )
+        _save(job, job.transcript)
+        return JSONResponse({"transcript": job.transcript.to_dict()})
+
+    @app.get("/api/jobs/{job_id}/export.txt")
+    def job_txt(job_id: str) -> PlainTextResponse:
+        job = _get(job_id)
+        if job.transcript is None:
+            raise HTTPException(409, "transcript not ready")
+        tr = job.transcript
+        labels = {s.id: s.label for s in tr.speakers}
+        lines: list[str] = []
+        last: object = object()
+        for seg in sorted(tr.segments, key=lambda s: s.start):
+            if seg.speaker_id != last:
+                lines.append(f"\n{labels.get(seg.speaker_id, 'SPEAKER')}:  {seg.text}")
+                last = seg.speaker_id
+            else:
+                lines.append(seg.text)
+        return PlainTextResponse("\n".join(lines).strip())
+
+    @app.get("/api/jobs/{job_id}/export.json")
+    def job_json(job_id: str) -> JSONResponse:
+        job = _get(job_id)
+        if job.transcript is None:
+            raise HTTPException(409, "transcript not ready")
+        return JSONResponse(job.transcript.to_dict())
 
     @app.get("/api/jobs/{job_id}/docx")
     def job_docx(job_id: str) -> FileResponse:

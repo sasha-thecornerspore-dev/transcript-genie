@@ -70,6 +70,66 @@ def test_full_web_flow(monkeypatch):
     assert client.post(f"/api/jobs/{jid}/export", json=edited).json()["ok"] is True
 
 
+class CountingEmbedder:
+    """Counts embed() calls — embedding is the slow step we cache."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, waveform, sample_rate):
+        import numpy as np
+
+        self.calls += 1
+        w = np.asarray(waveform, dtype=float)
+        m = min(1.0, float(np.abs(w).mean()))
+        return [m, 1.0 - m]
+
+
+def _start(client, **data):
+    r = client.post(
+        "/api/jobs",
+        files={"file": ("clip.mp3", b"not-a-real-mp3", "audio/mpeg")},
+        data={"model": "small", **data},
+    )
+    jid = r.json()["id"]
+    return jid, _wait(client, jid)
+
+
+def test_rediarize_reuses_cached_embeddings(monkeypatch):
+    monkeypatch.setattr(server, "decode_to_wav", _fake_decode)
+    emb = CountingEmbedder()
+    client = TestClient(server.create_app(engine=FakeEngine(), embedder=emb))
+
+    jid, s = _start(client, diarize="true")
+    assert s["status"] == "done", s
+    assert emb.calls == 2                       # one embedding per segment
+    after_first = emb.calls
+
+    r = client.post(f"/api/jobs/{jid}/rediarize", json={"threshold": 0.5, "min_cluster": 1})
+    assert r.status_code == 200
+    assert emb.calls == after_first             # re-tuning re-clusters, never re-embeds
+    tr = r.json()["transcript"]
+    assert tr["speakers"] and all(sp["label"].startswith("SPEAKER") for sp in tr["speakers"])
+    assert {s["speaker_id"] for s in tr["segments"]} == {sp["id"] for sp in tr["speakers"]}
+
+
+def test_txt_and_json_exports(monkeypatch):
+    monkeypatch.setattr(server, "decode_to_wav", _fake_decode)
+    client = TestClient(server.create_app(engine=FakeEngine()))
+    jid, s = _start(client, diarize="false")
+    assert s["status"] == "done", s
+
+    txt = client.get(f"/api/jobs/{jid}/export.txt")
+    assert txt.status_code == 200 and "Hello." in txt.text and "World." in txt.text
+    js = client.get(f"/api/jobs/{jid}/export.json").json()
+    assert [seg["text"] for seg in js["segments"]] == ["Hello.", "World."]
+
+
+def test_rediarize_before_ready_is_409():
+    client = TestClient(server.create_app(engine=FakeEngine()))
+    assert client.post("/api/jobs/nope/rediarize", json={}).status_code == 404
+
+
 def test_unknown_job_404():
     client = TestClient(server.create_app(engine=FakeEngine()))
     assert client.get("/api/jobs/nope").status_code == 404

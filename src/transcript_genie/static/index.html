@@ -17,49 +17,61 @@
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
     background:var(--bg); color:var(--text); }
-  header { padding:16px 22px; border-bottom:1px solid var(--line);
-    display:flex; align-items:baseline; gap:12px; }
-  header h1 { font-size:18px; margin:0; letter-spacing:.2px; }
+  header { padding:14px 22px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:12px; position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:18px; margin:0; }
   header .tag { color:var(--muted); font-size:12px; }
-  .wrap { max-width:1100px; margin:0 auto; padding:22px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-    padding:18px; margin-bottom:18px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
   label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
   input, select, textarea, button { font:inherit; color:var(--text); }
   input[type=text], input[type=number], select, textarea {
-    width:100%; background:var(--panel2); border:1px solid var(--line);
-    border-radius:8px; padding:9px 11px; }
+    width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:9px 11px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .row3 { display:grid; grid-template-columns:1fr 160px 180px; gap:12px; }
   .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
-  .row3 { display:grid; grid-template-columns:1fr 160px 160px; gap:12px; }
   .check { display:flex; align-items:center; gap:8px; margin-top:24px; }
   .check input { width:auto; }
-  button.primary { background:var(--accent); border:1px solid var(--accent2);
-    color:#fff; padding:11px 18px; border-radius:9px; cursor:pointer; font-weight:600; }
+  button.primary { background:var(--accent); border:1px solid var(--accent2); color:#fff;
+    padding:10px 16px; border-radius:9px; cursor:pointer; font-weight:600; }
   button.primary:disabled { opacity:.5; cursor:default; }
-  button.ghost { background:transparent; border:1px solid var(--line);
-    padding:9px 14px; border-radius:9px; cursor:pointer; color:var(--text); }
-  .drop { border:2px dashed var(--line); border-radius:12px; padding:26px;
-    text-align:center; color:var(--muted); cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); padding:8px 12px;
+    border-radius:9px; cursor:pointer; color:var(--text); }
+  button.ghost:hover { background:var(--panel2); }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:26px; text-align:center; color:var(--muted); cursor:pointer; }
   .drop.over { border-color:var(--accent); color:var(--text); }
-  .status { display:flex; align-items:center; gap:12px; color:var(--muted); }
-  .spinner { width:16px; height:16px; border:2px solid var(--line);
-    border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; }
+  .status { display:flex; align-items:center; gap:10px; color:var(--muted); }
+  .spinner { width:15px; height:15px; border:2px solid var(--line); border-top-color:var(--accent);
+    border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   .disclaimer { font-size:12px; color:var(--warn); margin-top:8px; }
-  .editor { display:grid; grid-template-columns:220px 1fr; gap:18px; align-items:start; }
-  .roster .spk { margin-bottom:8px; }
-  .seg { display:grid; grid-template-columns:150px 1fr; gap:10px; padding:6px 8px;
-    border-radius:8px; cursor:pointer; }
+  .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+  .hidden { display:none !important; }
+
+  /* review */
+  .transport { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .transport .time { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; min-width:96px; }
+  .speed { display:flex; align-items:center; gap:8px; min-width:210px; }
+  .speed input { width:120px; }
+  .editor { display:grid; grid-template-columns:262px 1fr; gap:16px; align-items:start; }
+  .side { position:sticky; top:64px; }
+  .spk { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .chip { width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+  .seg { display:grid; grid-template-columns:62px 132px 1fr; gap:8px; padding:3px 6px; border-radius:8px; cursor:pointer; }
   .seg:hover { background:var(--panel2); }
   .seg.active { background:var(--panel2); outline:1px solid var(--accent); }
-  .seg .who { color:var(--accent); font-size:12px; font-weight:600; padding-top:8px; }
-  .seg .txt { background:transparent; border:1px solid transparent; border-radius:6px;
-    padding:6px 8px; resize:vertical; min-height:34px; }
+  .seg.lowconf .txt { border-left:3px solid var(--warn); }
+  .seg.hit .txt { background:rgba(224,161,59,.18); }
+  .seg .ts { color:var(--muted); font-size:11px; padding-top:9px; font-variant-numeric:tabular-nums; }
+  .seg .who { font-size:11px; font-weight:700; padding-top:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seg .txt { background:transparent; border:1px solid transparent; border-radius:6px; padding:5px 7px;
+    resize:vertical; min-height:32px; overflow:hidden; }
   .seg .txt:focus { background:var(--panel2); border-color:var(--line); outline:none; }
-  audio { width:100%; margin-top:8px; }
-  .bar { display:flex; gap:10px; align-items:center; margin-top:14px; }
-  .hidden { display:none; }
-  a.btn { text-decoration:none; }
+  audio { width:100%; margin-top:6px; }
+  .stats { color:var(--muted); font-size:12px; }
+  .tune label { display:flex; justify-content:space-between; }
+  .tune label span { color:var(--text); font-variant-numeric:tabular-nums; }
+  .hint { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -69,12 +81,11 @@
 </header>
 
 <div class="wrap">
-  <!-- Import -->
+  <!-- ---------- Import ---------- -->
   <div class="card" id="import">
     <div class="drop" id="drop">
       <div id="dropText">Drop an audio/video file here, or click to choose</div>
-      <input id="file" type="file" class="hidden"
-             accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.flac,.ogg" />
+      <input id="file" type="file" class="hidden" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.flac,.ogg" />
     </div>
     <div class="row3">
       <div><label>Model</label>
@@ -108,22 +119,53 @@
     <div class="disclaimer">⚠️ Produces a working DRAFT transcript — not a certified court transcript. Long runs checkpoint as they go, so an interrupted job resumes where it left off.</div>
   </div>
 
-  <!-- Review -->
+  <!-- ---------- Review ---------- -->
   <div class="card hidden" id="review">
-    <audio id="audio" controls preload="metadata"></audio>
-    <div class="editor" style="margin-top:14px">
-      <div class="roster card" style="margin:0">
-        <div style="font-weight:600; margin-bottom:8px">Speakers</div>
-        <div id="roster"></div>
-      </div>
-      <div>
-        <div id="segs"></div>
-      </div>
+    <audio id="audio" preload="metadata"></audio>
+    <div class="transport">
+      <button class="ghost" id="back5" title="Back 5s (←)">⏪ 5s</button>
+      <button class="primary" id="play" title="Play/Pause (Space)">▶︎ Play</button>
+      <button class="ghost" id="fwd5" title="Forward 5s (→)">5s ⏩</button>
+      <span class="time" id="time">0:00 / 0:00</span>
+      <span class="speed"><label style="margin:0">Speed</label>
+        <input id="speed" type="range" min="0.5" max="2" step="0.1" value="1" />
+        <span id="speedVal" style="font-variant-numeric:tabular-nums">1.0×</span>
+      </span>
+      <input id="find" type="text" placeholder="Find in transcript…" style="max-width:230px" />
+      <span class="stats" id="stats"></span>
     </div>
+
+    <div class="editor" style="margin-top:14px">
+      <div class="side">
+        <div class="card" style="margin:0 0 12px">
+          <div style="font-weight:600; margin-bottom:8px">Speakers</div>
+          <div id="roster"></div>
+        </div>
+        <div class="card tune" style="margin:0">
+          <div style="font-weight:600; margin-bottom:6px">Speaker detection</div>
+          <label>Sensitivity <span id="thrVal">0.80</span></label>
+          <input id="thr" type="range" min="0.60" max="1.00" step="0.01" value="0.80" />
+          <div class="hint">Lower = splits more voices apart. Higher = merges them together.</div>
+          <label>Ignore clusters under <span id="minVal">10</span> lines</label>
+          <input id="minc" type="range" min="1" max="60" step="1" value="10" />
+          <div class="hint">Folds tiny noise clusters into “SPEAKER (unclear)”.</div>
+          <label>Force speaker count (0 = auto) <span id="nspkVal">0</span></label>
+          <input id="nspk" type="range" min="0" max="12" step="1" value="0" />
+          <div class="bar">
+            <button class="primary" id="redo" style="width:100%">Re-detect speakers</button>
+          </div>
+          <div class="hint" id="redoHint">Voice fingerprints are cached — re-detecting is instant.</div>
+        </div>
+      </div>
+      <div><div id="segs"></div></div>
+    </div>
+
     <div class="bar">
       <button class="primary" id="export">Save &amp; download DOCX</button>
+      <button class="ghost" id="exportTxt">Download .txt</button>
+      <button class="ghost" id="exportJson">Download .json</button>
       <button class="ghost" id="restart">New transcript</button>
-      <span class="status hidden" id="exportStatus"><span class="spinner"></span><span>Rendering…</span></span>
+      <span class="status hidden" id="exportStatus"><span class="spinner"></span><span id="exportMsg">Rendering…</span></span>
     </div>
   </div>
 </div>
@@ -131,8 +173,9 @@
 <script>
 const $ = s => document.querySelector(s);
 let state = { jobId:null, t:null };
+const COLORS = ["#5b9dff","#3fb568","#e0a13b","#c678dd","#e0563b","#56b6c2","#d19a66","#98c379","#e06c9f","#7f9cf5","#26a69a","#b58900"];
 
-// ---- import ----
+// ---------- import ----------
 const fileInput = $("#file"), drop = $("#drop");
 drop.onclick = () => fileInput.click();
 drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
@@ -160,53 +203,68 @@ $("#go").onclick = async () => {
   const { id } = await r.json();
   state.jobId = id; poll();
 };
-
 function showStatus(m) { $("#status").classList.remove("hidden"); $("#statusMsg").textContent = m; }
 
 async function poll() {
-  const r = await fetch(`/api/jobs/${state.jobId}`);
-  const j = await r.json();
+  const j = await (await fetch(`/api/jobs/${state.jobId}`)).json();
   showStatus(j.message || j.status);
   const prog = $("#prog");
-  if (j.status === "running" && typeof j.progress === "number") {
-    prog.classList.remove("hidden"); prog.value = j.progress;
-  } else { prog.classList.add("hidden"); }
+  if (j.status === "running" && typeof j.progress === "number") { prog.classList.remove("hidden"); prog.value = j.progress; }
+  else prog.classList.add("hidden");
   if (j.status === "done") { state.t = j.transcript; renderReview(); }
   else if (j.status === "error") { showStatus("⚠️ " + (j.error || "failed")); $("#go").disabled = false; }
   else setTimeout(poll, 1200);
 }
 
-// ---- review ----
-function speakerLabel(id) {
-  const s = (state.t.speakers || []).find(s => s.id === id);
-  return s ? s.label : (id ? "SPEAKER" : "SPEAKER");
+// ---------- helpers ----------
+const fmt = s => { s = Math.max(0, s||0); const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,"0")}`; };
+function speakerIdx(id) { return (state.t.speakers || []).findIndex(s => s.id === id); }
+function speakerLabel(id) { const s = (state.t.speakers||[]).find(s => s.id === id); return s ? s.label : "SPEAKER"; }
+function speakerColor(id) { const i = speakerIdx(id); return i < 0 ? "var(--muted)" : COLORS[i % COLORS.length]; }
+function segConf(seg) {
+  const w = seg.words || []; if (!w.length) return 1;
+  return w.reduce((a,b) => a + (b.confidence ?? 1), 0) / w.length;
 }
+
+// ---------- review ----------
 function renderRoster() {
   const el = $("#roster"); el.innerHTML = "";
-  (state.t.speakers || []).forEach((sp, i) => {
+  const list = state.t.speakers || [];
+  if (!list.length) { el.innerHTML = '<div class="hint">No separate speakers detected.</div>'; return; }
+  list.forEach((sp, i) => {
     const w = document.createElement("div"); w.className = "spk";
-    w.innerHTML = `<label style="margin:0 0 3px">${sp.name ? sp.name : sp.id}</label>`;
+    const chip = document.createElement("span"); chip.className = "chip"; chip.style.background = COLORS[i % COLORS.length];
     const inp = document.createElement("input"); inp.type = "text"; inp.value = sp.label;
     inp.oninput = () => { state.t.speakers[i].label = inp.value; renderSegs(); };
-    w.appendChild(inp); el.appendChild(w);
+    w.appendChild(chip); w.appendChild(inp); el.appendChild(w);
   });
-  if (!(state.t.speakers || []).length)
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px">No separate speakers.</div>';
 }
 function renderSegs() {
   const el = $("#segs"); el.innerHTML = "";
+  const q = ($("#find").value || "").trim().toLowerCase();
+  let shown = 0;
   state.t.segments.forEach((seg, i) => {
-    const row = document.createElement("div"); row.className = "seg"; row.dataset.i = i;
-    row.dataset.start = seg.start;
+    const row = document.createElement("div");
+    row.className = "seg"; row.dataset.start = seg.start;
+    if (segConf(seg) < 0.7) row.classList.add("lowconf");
+    if (q && seg.text.toLowerCase().includes(q)) { row.classList.add("hit"); shown++; }
+
+    const ts = document.createElement("div"); ts.className = "ts"; ts.textContent = fmt(seg.start);
     const who = document.createElement("div"); who.className = "who";
-    who.textContent = speakerLabel(seg.speaker_id) + ":";
-    const txt = document.createElement("textarea"); txt.className = "txt"; txt.rows = 1;
-    txt.value = seg.text;
-    txt.oninput = () => { state.t.segments[i].text = txt.value;
-      txt.style.height = "auto"; txt.style.height = txt.scrollHeight + "px"; };
-    row.onclick = e => { if (e.target !== txt) { $("#audio").currentTime = seg.start; $("#audio").play(); } };
-    row.appendChild(who); row.appendChild(txt); el.appendChild(row);
+    who.textContent = speakerLabel(seg.speaker_id); who.style.color = speakerColor(seg.speaker_id);
+
+    const txt = document.createElement("textarea"); txt.className = "txt"; txt.rows = 1; txt.value = seg.text;
+    const fit = () => { txt.style.height = "auto"; txt.style.height = (txt.scrollHeight + 2) + "px"; };
+    txt.oninput = () => { state.t.segments[i].text = txt.value; fit(); };
+    setTimeout(fit, 0);
+    if (segConf(seg) < 0.7) txt.title = "Low confidence — worth verifying against the audio";
+
+    row.onclick = e => { if (e.target !== txt) seek(seg.start); };
+    row.appendChild(ts); row.appendChild(who); row.appendChild(txt); el.appendChild(row);
   });
+  const words = state.t.segments.reduce((a,s) => a + s.text.split(/\s+/).filter(Boolean).length, 0);
+  const dur = state.t.segments.length ? state.t.segments[state.t.segments.length-1].end : 0;
+  $("#stats").textContent = `${state.t.segments.length} lines · ${words.toLocaleString()} words · ${fmt(dur)}` + (q ? ` · ${shown} match${shown===1?"":"es"}` : "");
 }
 function renderReview() {
   $("#import").classList.add("hidden");
@@ -214,26 +272,70 @@ function renderReview() {
   $("#audio").src = `/api/jobs/${state.jobId}/audio`;
   renderRoster(); renderSegs();
 }
-// highlight active segment during playback
-$("#audio") && ($("#audio").ontimeupdate = () => {
-  const t = $("#audio").currentTime; let active = null;
-  document.querySelectorAll(".seg").forEach(row => {
-    const s = parseFloat(row.dataset.start);
-    if (s <= t) active = row;
-    row.classList.remove("active");
+$("#find").oninput = renderSegs;
+
+// ---------- transport ----------
+const audio = $("#audio");
+function seek(t) { audio.currentTime = t; audio.play(); }
+$("#play").onclick = () => audio.paused ? audio.play() : audio.pause();
+$("#back5").onclick = () => audio.currentTime = Math.max(0, audio.currentTime - 5);
+$("#fwd5").onclick = () => audio.currentTime = audio.currentTime + 5;
+audio.onplay = () => $("#play").textContent = "⏸ Pause";
+audio.onpause = () => $("#play").textContent = "▶︎ Play";
+$("#speed").oninput = e => { audio.playbackRate = parseFloat(e.target.value); $("#speedVal").textContent = (+e.target.value).toFixed(1) + "×"; };
+audio.ontimeupdate = () => {
+  $("#time").textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+  let active = null;
+  document.querySelectorAll(".seg").forEach(r => {
+    if (parseFloat(r.dataset.start) <= audio.currentTime) active = r;
+    r.classList.remove("active");
   });
   if (active) active.classList.add("active");
+};
+document.addEventListener("keydown", e => {
+  const typing = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+  if (typing || $("#review").classList.contains("hidden")) return;
+  if (e.code === "Space") { e.preventDefault(); audio.paused ? audio.play() : audio.pause(); }
+  if (e.code === "ArrowLeft") { e.preventDefault(); audio.currentTime = Math.max(0, audio.currentTime - 5); }
+  if (e.code === "ArrowRight") { e.preventDefault(); audio.currentTime += 5; }
 });
 
-$("#export").onclick = async () => {
-  $("#exportStatus").classList.remove("hidden");
-  const payload = JSON.parse(JSON.stringify(state.t));
+// ---------- speaker tuning ----------
+$("#thr").oninput = e => $("#thrVal").textContent = (+e.target.value).toFixed(2);
+$("#minc").oninput = e => $("#minVal").textContent = e.target.value;
+$("#nspk").oninput = e => $("#nspkVal").textContent = e.target.value === "0" ? "auto" : e.target.value;
+$("#redo").onclick = async () => {
+  const btn = $("#redo"); btn.disabled = true; btn.textContent = "Re-detecting…";
+  try {
+    const body = {
+      threshold: parseFloat($("#thr").value),
+      min_cluster: parseInt($("#minc").value, 10),
+      num_speakers: parseInt($("#nspk").value, 10) || null,
+    };
+    const r = await fetch(`/api/jobs/${state.jobId}/rediarize`, {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(await r.text());
+    const { transcript } = await r.json();
+    state.t = transcript; renderRoster(); renderSegs();
+    const n = (state.t.speakers||[]).filter(s => s.id !== "spk_unclear").length;
+    $("#redoHint").textContent = `Found ${n} voice${n===1?"":"s"}. Adjust and re-detect until it looks right.`;
+  } catch (err) {
+    $("#redoHint").textContent = "Re-detect failed: " + err.message;
+  } finally { btn.disabled = false; btn.textContent = "Re-detect speakers"; }
+};
+
+// ---------- export ----------
+async function saveEdits() {
   await fetch(`/api/jobs/${state.jobId}/export`, {
-    method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload),
-  });
+    method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(state.t) });
+}
+$("#export").onclick = async () => {
+  $("#exportStatus").classList.remove("hidden"); await saveEdits();
   $("#exportStatus").classList.add("hidden");
   window.location = `/api/jobs/${state.jobId}/docx`;
 };
+$("#exportTxt").onclick = async () => { await saveEdits(); window.location = `/api/jobs/${state.jobId}/export.txt`; };
+$("#exportJson").onclick = async () => { await saveEdits(); window.location = `/api/jobs/${state.jobId}/export.json`; };
 $("#restart").onclick = () => location.reload();
 </script>
 </body>
