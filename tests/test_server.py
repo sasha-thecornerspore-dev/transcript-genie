@@ -125,6 +125,24 @@ def test_txt_and_json_exports(monkeypatch):
     assert [seg["text"] for seg in js["segments"]] == ["Hello.", "World."]
 
 
+def test_export_persists_manual_speaker_reassignment(monkeypatch):
+    monkeypatch.setattr(server, "decode_to_wav", _fake_decode)
+    client = TestClient(server.create_app(engine=FakeEngine()))
+    jid, s = _start(client, diarize="false")
+    assert s["status"] == "done", s
+
+    # Reviewer adds a speaker by hand and reassigns one line to it.
+    t = s["transcript"]
+    t["speakers"] = [{"id": "spk_manual_1", "label": "THE WITNESS"}]
+    t["segments"][1]["speaker_id"] = "spk_manual_1"
+    assert client.post(f"/api/jobs/{jid}/export", json=t).json()["ok"] is True
+
+    txt = client.get(f"/api/jobs/{jid}/export.txt").text
+    assert "THE WITNESS:  World." in txt           # the reassigned line carries the new label
+    js = client.get(f"/api/jobs/{jid}/export.json").json()
+    assert js["segments"][1]["speaker_id"] == "spk_manual_1"
+
+
 def test_rediarize_before_ready_is_409():
     client = TestClient(server.create_app(engine=FakeEngine()))
     assert client.post("/api/jobs/nope/rediarize", json={}).status_code == 404

@@ -63,7 +63,11 @@
   .seg.lowconf .txt { border-left:3px solid var(--warn); }
   .seg.hit .txt { background:rgba(224,161,59,.18); }
   .seg .ts { color:var(--muted); font-size:11px; padding-top:9px; font-variant-numeric:tabular-nums; }
-  .seg .who { font-size:11px; font-weight:700; padding-top:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  select.who { font-size:11px; font-weight:700; background:transparent; border:1px solid transparent;
+    border-radius:6px; padding:6px 2px; margin-top:3px; width:100%; cursor:pointer; appearance:none; -webkit-appearance:none; }
+  select.who:hover, select.who:focus { background:var(--panel2); border-color:var(--line); outline:none; }
+  select.who option { color:var(--text); background:var(--panel); }
+  .spk button.addspk { width:100%; font-size:12px; margin-top:6px; }
   .seg .txt { background:transparent; border:1px solid transparent; border-radius:6px; padding:5px 7px;
     resize:vertical; min-height:32px; overflow:hidden; }
   .seg .txt:focus { background:var(--panel2); border-color:var(--line); outline:none; }
@@ -229,8 +233,9 @@ function segConf(seg) {
 // ---------- review ----------
 function renderRoster() {
   const el = $("#roster"); el.innerHTML = "";
-  const list = state.t.speakers || [];
-  if (!list.length) { el.innerHTML = '<div class="hint">No separate speakers detected.</div>'; return; }
+  state.t.speakers = state.t.speakers || [];
+  const list = state.t.speakers;
+  if (!list.length) el.innerHTML = '<div class="hint">No separate speakers detected — add one to label lines by hand.</div>';
   list.forEach((sp, i) => {
     const w = document.createElement("div"); w.className = "spk";
     const chip = document.createElement("span"); chip.className = "chip"; chip.style.background = COLORS[i % COLORS.length];
@@ -238,6 +243,17 @@ function renderRoster() {
     inp.oninput = () => { state.t.speakers[i].label = inp.value; renderSegs(); };
     w.appendChild(chip); w.appendChild(inp); el.appendChild(w);
   });
+  const addWrap = document.createElement("div"); addWrap.className = "spk";
+  const add = document.createElement("button"); add.className = "ghost addspk"; add.id = "addspk";
+  add.textContent = "＋ Add speaker";
+  add.onclick = () => {
+    const ids = new Set(list.map(s => s.id));
+    let n = list.length + 1, id = "spk_manual_" + n;
+    while (ids.has(id)) { n++; id = "spk_manual_" + n; }
+    list.push({ id, label: "SPEAKER " + n });
+    renderRoster(); renderSegs();
+  };
+  addWrap.appendChild(add); el.appendChild(addWrap);
 }
 function renderSegs() {
   const el = $("#segs"); el.innerHTML = "";
@@ -250,8 +266,17 @@ function renderSegs() {
     if (q && seg.text.toLowerCase().includes(q)) { row.classList.add("hit"); shown++; }
 
     const ts = document.createElement("div"); ts.className = "ts"; ts.textContent = fmt(seg.start);
-    const who = document.createElement("div"); who.className = "who";
-    who.textContent = speakerLabel(seg.speaker_id); who.style.color = speakerColor(seg.speaker_id);
+    const who = document.createElement("select"); who.className = "who";
+    (state.t.speakers || []).forEach(sp => {
+      const o = document.createElement("option"); o.value = sp.id; o.textContent = sp.label; who.appendChild(o);
+    });
+    if (seg.speaker_id && !(state.t.speakers || []).some(s => s.id === seg.speaker_id)) {
+      const o = document.createElement("option"); o.value = seg.speaker_id; o.textContent = speakerLabel(seg.speaker_id); who.appendChild(o);
+    }
+    if (!who.options.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "—"; who.appendChild(o); }
+    who.value = seg.speaker_id || "";
+    who.style.color = speakerColor(seg.speaker_id);
+    who.onchange = () => { state.t.segments[i].speaker_id = who.value || null; who.style.color = speakerColor(who.value); };
 
     const txt = document.createElement("textarea"); txt.className = "txt"; txt.rows = 1; txt.value = seg.text;
     const fit = () => { txt.style.height = "auto"; txt.style.height = (txt.scrollHeight + 2) + "px"; };
@@ -259,7 +284,7 @@ function renderSegs() {
     setTimeout(fit, 0);
     if (segConf(seg) < 0.7) txt.title = "Low confidence — worth verifying against the audio";
 
-    row.onclick = e => { if (e.target !== txt) seek(seg.start); };
+    row.onclick = e => { if (!/TEXTAREA|SELECT|OPTION/.test(e.target.tagName)) seek(seg.start); };
     row.appendChild(ts); row.appendChild(who); row.appendChild(txt); el.appendChild(row);
   });
   const words = state.t.segments.reduce((a,s) => a + s.text.split(/\s+/).filter(Boolean).length, 0);
